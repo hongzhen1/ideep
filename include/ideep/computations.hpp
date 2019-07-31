@@ -364,14 +364,9 @@ struct convolution_forward: public computation,
   template <class alloc, bool with_bias>
   static void compute_impl(convolution_forward& comp, const tensor& src,
       const tensor& weights, const tensor& bias, tensor& dst) {
-    auto weights_ = weights;
-    if (src.get_data_type() == tdtype_t::bf16 && weights.get_data_type() == tdtype_t::f32) {
-      weights_.init<alloc>({weights_.get_dims(), tdtype_t::bf16});
-      treorder_t::compute(weights, weights_);
-    }
 
     auto src_in = comp.transform_input_cache<alloc>(0, src);
-    auto weights_in = comp.transform_input_cache<alloc>(1, weights_.as_weights());
+    auto weights_in = comp.transform_input_cache<alloc>(1, weights.as_weights());
 
     if (comp.dst_exp_desc_) {
       dst.reinit<alloc>(*comp.dst_exp_desc_);
@@ -404,7 +399,6 @@ struct convolution_forward: public computation,
     tdesc_t src_desc, weights_desc, bias_desc;
     attr_t op_attr, src_attr, weights_attr, bias_attr;
 
-    auto weights_ = weights;
     auto weights_scales_in = weights.has_scale() ? weights.get_scale() : weights_scales;
     if (!weights_scales_in.empty()) {
       IDEEP_ENFORCE(alowp_kind == LOWP_U8S8 || alowp_kind == LOWP_S8S8, "Unsupported lowp kind");
@@ -470,18 +464,16 @@ struct convolution_forward: public computation,
         src_attr = {0, src_scale};
       }
 
+      weights_desc = weights.get_descriptor();
       if (src.get_data_type() == tdtype_t::bf16 && weights.get_data_type() == tdtype_t::f32) {
         dst_data_type = tdtype_t::bf16;
         src_desc = {src.get_dims(), tdtype_t::bf16};
-        weights_.init<alloc>({weights.get_dims(), tdtype_t::bf16});
-        // weights_.init<alloc>({weights.get_dims(), tdtype_t::bf16, weights.get_internal_format()});
-        treorder_t::compute(weights, weights_);
+        weights_desc = {weights.get_dims(), tdtype_t::bf16};
       } else {
         src_desc = {src.get_dims(), tdtype_t::f32};
       }
 
-      weights_desc = weights_.get_descriptor();
-      IDEEP_ENFORCE(weights_.get_data_type() == tdtype_t::f32 || weights_.get_data_type() == tdtype_t::bf16,
+      IDEEP_ENFORCE(weights.get_data_type() == tdtype_t::f32 || weights.get_data_type() == tdtype_t::bf16,
                     "Incorrect data type in weights");
 
       if (with_bias) {
@@ -495,13 +487,13 @@ struct convolution_forward: public computation,
       dst.get_internal_format() : engine::default_format(dst_dims.size());
     tdesc_t dst_desc_in(dst_dims, dst_data_type, dst_format);
 
-    check_or_create_k(key, src, weights_, with_bias, strides, dilates, padding_l, padding_r,
+    check_or_create_k(key, src, weights_desc, with_bias, strides, dilates, padding_l, padding_r,
         op_attr, src_scales, dst_scales, args...);
     fetch_or_create_m(comp, key, src_desc, weights_desc, bias_desc, dst_desc_in, strides, dilates,
             padding_l, padding_r, op_attr, std::forward<Ts>(args)...);
 
     auto src_in = comp.transform_input_cache<alloc>(0, src, src_attr);
-    auto weights_in = comp.transform_input_cache<alloc>(1, weights_.as_weights(), weights_attr);
+    auto weights_in = comp.transform_input_cache<alloc>(1, weights.as_weights(), weights_attr);
 
     auto dst_desc = comp.expected_dst_descriptor();
     if (dst.get_descriptor() != dst_desc) {
@@ -729,20 +721,19 @@ public:
   template<class alloc, typename ...Ts>
   static void compute_impl(const tensor& grady, const tensor& weights,
       const tdims_t& gradx_dims, tensor& gradx, Ts&&... args) {
-    auto weights_ = weights;
+    auto weights_desc = weights.get_descriptor();
     if (grady.get_data_type() == tdtype_t::bf16 && weights.get_data_type() == tdtype_t::f32) {
-      weights_.init<alloc>({weights.get_dims(), tdtype_t::bf16});
-      treorder_t::compute(weights, weights_);
+      weights_desc = {weights.get_dims(), tdtype_t::bf16};
     }
 
     tdesc_t result_desc(gradx_dims, grady.get_data_type());
     key_t key;
-    check_or_create_k(key, grady, weights_, gradx_dims, args...);
+    check_or_create_k(key, grady, weights_desc, gradx_dims, args...);
     fetch_or_create_m(comp, key, grady.get_descriptor(),
-        weights_.get_descriptor(), result_desc, std::forward<Ts>(args)...);
+        weights_desc, result_desc, std::forward<Ts>(args)...);
 
     auto grady_in = comp.transform_input_cache<alloc>(0, grady);
-    auto weights_in = comp.transform_input_cache<alloc>(1, weights_.as_weights());
+    auto weights_in = comp.transform_input_cache<alloc>(1, weights.as_weights());
     gradx.reinit<alloc>(comp.expected_gradx_descriptor());
     comp.execute(grady_in, weights_in, gradx);
   }
@@ -2169,14 +2160,9 @@ struct inner_product_forward: public computation,
   template <class alloc, bool with_bias>
   static void compute_impl(inner_product_forward& comp, const tensor& src,
       const tensor& weights, const tensor& bias, tensor& dst) {
-    auto weights_ = weights;
-    if (src.get_data_type() == tdtype_t::bf16 && weights.get_data_type() == tdtype_t::f32) {
-      weights_.init<alloc>({weights_.get_dims(), tdtype_t::bf16});
-      treorder_t::compute(weights, weights_);
-    }
 
     auto src_in = comp.transform_input_cache<alloc>(0, src);
-    auto weights_in = comp.transform_input_cache<alloc>(1, weights_.as_weights());
+    auto weights_in = comp.transform_input_cache<alloc>(1, weights.as_weights());
     if (comp.dst_exp_desc_) {
       dst.reinit<alloc>(*comp.dst_exp_desc_);
     }
@@ -2210,7 +2196,6 @@ struct inner_product_forward: public computation,
     tensor::dims dst_dims;
 
     auto weights_scales_in = weights.has_scale() ? weights.get_scale() : weights_scales;
-    auto weights_ = weights;
     if (!weights_scales_in.empty()) {
       IDEEP_ENFORCE(alowp_kind == LOWP_U8S8 || alowp_kind == LOWP_S8S8, "Unsupported lowp kind");
 
@@ -2261,17 +2246,17 @@ struct inner_product_forward: public computation,
         src_scale[0] = 1.0f / src_scale[0];
         src_attr = {0, src_scale};
       }
+
+      weights_desc = weights.get_descriptor();
       if (src.get_data_type() == tdtype_t::bf16 && weights.get_data_type() == tdtype_t::f32) {
         dst_data_type = tdtype_t::bf16;
         src_desc = {src.get_dims(), tdtype_t::bf16};
-        weights_.init<alloc>({weights.get_dims(), tdtype_t::bf16});
-        treorder_t::compute(weights, weights_);
+        weights_desc = {weights.get_dims(), tdtype_t::bf16};
       } else {
         src_desc = {src.get_dims(), tdtype_t::f32};
       }
-      weights_desc = weights_.get_descriptor();
-      dst_dims = {src_desc.get_dim(0), weights_.get_dim(0)};
-      IDEEP_ENFORCE(weights_.get_data_type() == tdtype_t::f32 || weights_.get_data_type() == tdtype_t::bf16,
+      dst_dims = {src_desc.get_dim(0), weights.get_dim(0)};
+      IDEEP_ENFORCE(weights.get_data_type() == tdtype_t::f32 || weights.get_data_type() == tdtype_t::bf16,
                     "Incorrect data type in weights");
       if (with_bias) {
         IDEEP_ENFORCE(bias.get_data_type() == tdtype_t::f32, "Incorrect data type in bias");
@@ -2282,12 +2267,12 @@ struct inner_product_forward: public computation,
     auto dst_format = engine::default_format(dst_dims.size());
     tdesc_t dst_desc_in(dst_dims, dst_data_type, dst_format);
 
-    check_or_create_k(key, src, weights_, with_bias, op_attr, src_scales, dst_scales, args...);
+    check_or_create_k(key, src, weights_desc, with_bias, op_attr, src_scales, dst_scales, args...);
     fetch_or_create_m(comp, key, src_desc, weights_desc, bias_desc, dst_desc_in, op_attr,
         std::forward<Ts>(args)...);
 
     auto src_in = comp.transform_input_cache<alloc>(0, src, src_attr);
-    auto weights_in = comp.transform_input_cache<alloc>(1, weights_.as_weights(), weights_attr);
+    auto weights_in = comp.transform_input_cache<alloc>(1, weights.as_weights(), weights_attr);
 
     auto dst_desc = comp.expected_dst_descriptor();
     if (dst.get_descriptor() != dst_desc) {
