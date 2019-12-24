@@ -1265,9 +1265,10 @@ public:
 
   /// Convert the tensor to public format, and f32 data type by default
   template<class alloc = utils::allocator>
-  inline tensor to_public(void* array = nullptr, bool scale_out = true) const {
+  inline tensor to_public(void* array = nullptr, data_type dtype = data_type::data_undef, bool scale_out = true) const {
     tensor ret;
-    auto dst_dtype = scale_out && (get_data_type() != data_type::bf16) ? data_type::f32 : get_data_type();
+    auto dst_dtype = (dtype != data_type::data_undef) ? dtype
+      : (scale_out && (get_data_type() != data_type::bf16) ? data_type::f32 : get_data_type());
     auto dst_format = ((public_format_ == format::format_undef) || (public_format_ == format::iohw))
       ? engine::default_format(ndims()) : public_format_;
 
@@ -1313,7 +1314,7 @@ public:
   /// Convert the tensor to public format and keep original data type
   template<class alloc = utils::allocator>
   inline tensor to_public_format(void* array = nullptr) const {
-    return to_public<alloc>(array, false /* scale out */);
+    return to_public<alloc>(array, data_type::data_undef, false /* scale out */);
   }
 
   bool is_nchw_channel_blocking() const {
